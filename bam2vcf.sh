@@ -1,18 +1,19 @@
 #!/bin/sh
 
-#SBATCH --time 22:00:00
-#SBATCH --mem=125GB
+#SBATCH --time 20:00:00
+#SBATCH --mem=25GB
 
 module load GCC/11.3.0
 module load SAMtools/1.18
 module load HTSlib/1.18 #contains tabix and bgzip
 module load BCFtools/1.18
 
-sample=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ../all_sample_names)  #just the sample ID
+sample=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ../missing_samples.txt)  #just the sample ID
 
 #paths for sort
 path_bam=/data/lea_lab/archive_raw_fastq/TurkanaTsimaneOA_DNAmeth_17Jun2024/bams/${sample}.bam
 sorted_bam=/nobackup/lea_lab/nicole/dna_methylation/outputs/sorted/${sample}_sorted.bam
+filtered_bam=/nobackup/lea_lab/nicole/dna_methylation/outputs/sorted/${sample}_filtered.bam
 
 #paths for convert 
 sorted_chr=/nobackup/lea_lab/nicole/dna_methylation/outputs/sorted/${sample} #path to sorted splits
@@ -41,17 +42,22 @@ echo "sort for ${sample} done"
 samtools index $sorted_bam
 mkdir /nobackup/lea_lab/nicole/dna_methylation/outputs/sorted/${sample}
 
+#filter bams before split
+samtools view --region-file ../targetbed.txt $sorted_bam -b -o $filtered_bam
+samtools index $filtered_bam
+
 for chr in {1..22} X Y ; do
-    if samtools idxstats "$sorted_bam" | awk '{print $1}' | grep -q -w "chr$chr"; then
+    if samtools idxstats "$filtered_bam" | awk '{print $1}' | grep -q -w "chr$chr"; then
         output_bam=/nobackup/lea_lab/nicole/dna_methylation/outputs/sorted/${sample}
         echo "Starting chr ${chr} split"
-        samtools view -b $sorted_bam "chr${chr}" >"$output_bam/chr${chr}.bam"
+        samtools view -b $filtered_bam "chr${chr}" >"$output_bam/chr${chr}.bam"
     fi 
 done
 
 echo "split done"
 
 rm $sorted_bam
+rm $filtered_bam
 
 for chr in {1..22} X Y; do
     if [ -f "/nobackup/lea_lab/nicole/dna_methylation/outputs/sorted/${sample}/chr${chr}.bam" ]; then
@@ -93,5 +99,7 @@ rm -r /nobackup/lea_lab/nicole/dna_methylation/outputs/converted/${sample}
 
 #remove split bams
 rm -r /nobackup/lea_lab/nicole/dna_methylation/outputs/vcfs/${sample}
+
+rm -r $sorted_chr
 
 echo "done with ${sample}"
